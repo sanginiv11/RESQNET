@@ -100,7 +100,7 @@ function App() {
   // SAFE DATA LOADING
   const loadRequests = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:5000/requests");
+      const response = await fetch("https://resqnet-mktu.onrender.com/requests");
       const data = await response.json();
       setRequests(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -112,7 +112,7 @@ function App() {
   // Load responders (vehicle tracking)
   const loadResponders = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:5000/responders");
+      const response = await fetch("https://resqnet-mktu.onrender.com/responders");
       const data = await response.json();
       setResponders(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -125,17 +125,17 @@ function App() {
   const loadNearbyServices = async (lat, lng) => {
     try {
       const [hospitalsRes, fireRes, policeRes] = await Promise.all([
-        fetch("http://127.0.0.1:5000/nearby/hospitals", {
+        fetch("https://resqnet-mktu.onrender.com/nearby/hospitals", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ lat, lng })
         }),
-        fetch("http://127.0.0.1:5000/nearby/fire-stations", {
+        fetch("https://resqnet-mktu.onrender.com/nearby/fire-stations", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ lat, lng })
         }),
-        fetch("http://127.0.0.1:5000/nearby/police-stations", {
+        fetch("https://resqnet-mktu.onrender.com/nearby/police-stations", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ lat, lng })
@@ -257,7 +257,7 @@ function App() {
     }
 
     try {
-      const res = await fetch("http://127.0.0.1:5000/request-help", {
+      const res = await fetch("https://resqnet-mktu.onrender.com/request-help", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
