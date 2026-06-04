@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { MapContainer, TileLayer, Marker, Popup, CircleMarker } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, CircleMarker, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
@@ -96,6 +96,10 @@ function App() {
   const [reportedService, setReportedService] = useState(null);
   const [responders, setResponders] = useState([]);
   const [nearbyServices, setNearbyServices] = useState({ hospitals: [], fire: [], police: [] });
+  const [locationSearch, setLocationSearch] = useState("");
+  const [locationSearching, setLocationSearching] = useState(false);
+  const [locationSearchError, setLocationSearchError] = useState("");
+  const [etaMarkerLocation, setEtaMarkerLocation] = useState(null);
 
   // SAFE DATA LOADING
   const loadRequests = async () => {
@@ -237,6 +241,46 @@ function App() {
     setGpsError("");
   };
 
+  // Geocode a place name to lat/lng using Nominatim (free, no API key)
+  const handleLocationSearch = async () => {
+    if (!locationSearch.trim()) return;
+    setLocationSearching(true);
+    setLocationSearchError("");
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationSearch)}&format=json&limit=1`,
+        { headers: { "Accept-Language": "en" } }
+      );
+      const data = await res.json();
+      if (data && data.length > 0) {
+        const lat = parseFloat(data[0].lat);
+        const lng = parseFloat(data[0].lon);
+        setCustomLocation({ lat, lng });
+        setUseCustomLocation(true);
+        setGpsError("");
+        setLocationSearchError("");
+        loadNearbyServices(lat, lng);
+      } else {
+        setLocationSearchError("Location not found. Try a more specific name.");
+      }
+    } catch (err) {
+      setLocationSearchError("Search failed. Check your connection.");
+    } finally {
+      setLocationSearching(false);
+    }
+  };
+
+  // Helper component to fly map to new location
+  function MapFlyTo({ location }) {
+    const map = useMap();
+    useEffect(() => {
+      if (location) {
+        map.flyTo([location.lat, location.lng], 14, { animate: true, duration: 1.2 });
+      }
+    }, [location, map]);
+    return null;
+  }
+
   // SUBMIT REQUEST (FIXED)
   const submitRequest = async () => {
     const locationToUse = useCustomLocation ? customLocation : userLocation;
@@ -291,6 +335,7 @@ function App() {
       // Set submission time and ETA
       setLastSubmissionTime(new Date());
       setEta(data.eta_minutes);
+      setEtaMarkerLocation(locationToUse);
 
       // Set the reported service
       let service = "Ambulance";
@@ -547,7 +592,7 @@ function App() {
         )}
       </div>
 
-      {/* MANUAL LOCATION INPUT */}
+      {/* LOCATION SEARCH INPUT */}
       <div
         style={{
           background: currentTheme.cardBg,
@@ -558,18 +603,18 @@ function App() {
           textAlign: "center",
         }}
       >
-        <h3 style={{ color: currentTheme.text }}>Or Enter Location Manually</h3>
+        <h3 style={{ color: currentTheme.text }}>Or Search a Location by Name</h3>
         <p style={{ fontSize: "0.9em", color: currentTheme.text }}>
-          Use this if reporting for someone else at a different location
+          Use this if reporting an emergency at a different address
         </p>
 
-        <div style={{ display: "flex", gap: "10px", marginBottom: "15px" }}>
+        <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
           <input
-            type="number"
-            placeholder="Latitude (-90 to 90)"
-            value={manualLat}
-            onChange={(e) => setManualLat(e.target.value)}
-            step="0.0001"
+            type="text"
+            placeholder="e.g. MG Road Indore, Connaught Place Delhi..."
+            value={locationSearch}
+            onChange={(e) => setLocationSearch(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleLocationSearch()}
             style={{
               flex: 1,
               padding: "12px",
@@ -580,43 +625,34 @@ function App() {
               fontSize: "1em",
             }}
           />
-          <input
-            type="number"
-            placeholder="Longitude (-180 to 180)"
-            value={manualLng}
-            onChange={(e) => setManualLng(e.target.value)}
-            step="0.0001"
+          <button
+            onClick={handleLocationSearch}
+            disabled={locationSearching}
             style={{
-              flex: 1,
-              padding: "12px",
-              backgroundColor: currentTheme.inputBg,
-              color: currentTheme.text,
-              border: `2px solid ${currentTheme.border}`,
-              borderRadius: "5px",
+              padding: "12px 20px",
+              background: "#ffc0cb",
+              color: "#000000",
+              border: "3px solid #000000",
+              borderRadius: "8px",
               fontSize: "1em",
+              fontWeight: "bold",
+              cursor: locationSearching ? "wait" : "pointer",
+              whiteSpace: "nowrap",
             }}
-          />
+          >
+            {locationSearching ? "Searching..." : "Search"}
+          </button>
         </div>
 
-        <button
-          onClick={handleManualLocation}
-          style={{
-            padding: "10px 30px",
-            width: "100%",
-            background: "#ffc0cb",
-            color: "#000000",
-            border: "3px solid #000000",
-            borderRadius: "8px",
-            fontSize: "1em",
-            fontWeight: "bold",
-            cursor: "pointer",
-            transition: "transform 0.2s",
-          }}
-          onMouseOver={(e) => (e.target.style.transform = "scale(1.02)")}
-          onMouseOut={(e) => (e.target.style.transform = "scale(1)")}
-        >
-          Set Manual Location
-        </button>
+        {locationSearchError && (
+          <p style={{ color: "#dc143c", fontWeight: "bold" }}>{locationSearchError}</p>
+        )}
+
+        {customLocation && useCustomLocation && (
+          <p style={{ fontSize: "1em", fontWeight: "bold", color: currentTheme.text }}>
+            📍 Location set: {locationSearch || `${customLocation.lat.toFixed(4)}, ${customLocation.lng.toFixed(4)}`}
+          </p>
+        )}
       </div>
 
       {/* ETA MESSAGE - DELIVERY APP STYLE */}
@@ -778,6 +814,15 @@ function App() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
+          {/* Fly to new location when it changes */}
+          <MapFlyTo
+            location={
+              useCustomLocation && customLocation
+                ? customLocation
+                : userLocation
+            }
+          />
+
           {/* User Location Marker */}
           {(userLocation || customLocation) && (
             <CircleMarker
@@ -786,24 +831,24 @@ function App() {
                   ? [customLocation.lat, customLocation.lng]
                   : [userLocation.lat, userLocation.lng]
               }
-              radius={8}
+              radius={10}
               fillColor="#dc143c"
               color="#000000"
               weight={3}
               opacity={1}
-              fillOpacity={0.8}
+              fillOpacity={0.85}
             >
               <Popup>
-                <strong>Your Location</strong>
+                <strong>📍 Your Location</strong>
               </Popup>
             </CircleMarker>
           )}
 
-          {/* Hospital Markers - Green */}
-          {(nearbyServices.hospitals && nearbyServices.hospitals.length > 0 ? nearbyServices.hospitals : hospitalData).map((hospital, idx) => (
+          {/* Hospital Markers - only real API data */}
+          {nearbyServices.hospitals.map((hospital, idx) => (
             <Marker key={`hospital-${idx}`} position={[hospital.lat, hospital.lng]} icon={hospitalIcon}>
               <Popup>
-                <strong>Hospital: {hospital.name}</strong>
+                <strong>🏥 {hospital.name}</strong>
                 <br />
                 Distance: {hospital.distance}
                 <br />
@@ -811,16 +856,7 @@ function App() {
                 <br />
                 <button
                   onClick={() => alert(`Calling ${hospital.name}...`)}
-                  style={{
-                    marginTop: "5px",
-                    padding: "5px 10px",
-                    backgroundColor: "#ffc0cb",
-                    color: "#000000",
-                    border: "none",
-                    borderRadius: "3px",
-                    cursor: "pointer",
-                    fontWeight: "bold",
-                  }}
+                  style={{ marginTop: "5px", padding: "5px 10px", backgroundColor: "#ffc0cb", color: "#000000", border: "none", borderRadius: "3px", cursor: "pointer", fontWeight: "bold" }}
                 >
                   Call Now
                 </button>
@@ -828,11 +864,11 @@ function App() {
             </Marker>
           ))}
 
-          {/* Fire Station Markers - Orange */}
-          {(nearbyServices.fire && nearbyServices.fire.length > 0 ? nearbyServices.fire : fireStations).map((station, idx) => (
+          {/* Fire Station Markers - only real API data */}
+          {nearbyServices.fire.map((station, idx) => (
             <Marker key={`fire-${idx}`} position={[station.lat, station.lng]} icon={fireIcon}>
               <Popup>
-                <strong>Fire Station: {station.name}</strong>
+                <strong>🚒 {station.name}</strong>
                 <br />
                 Distance: {station.distance}
                 <br />
@@ -840,16 +876,7 @@ function App() {
                 <br />
                 <button
                   onClick={() => alert(`Calling ${station.name}...`)}
-                  style={{
-                    marginTop: "5px",
-                    padding: "5px 10px",
-                    backgroundColor: "#ffc0cb",
-                    color: "#000000",
-                    border: "none",
-                    borderRadius: "3px",
-                    cursor: "pointer",
-                    fontWeight: "bold",
-                  }}
+                  style={{ marginTop: "5px", padding: "5px 10px", backgroundColor: "#ffc0cb", color: "#000000", border: "none", borderRadius: "3px", cursor: "pointer", fontWeight: "bold" }}
                 >
                   Call Now
                 </button>
@@ -857,11 +884,11 @@ function App() {
             </Marker>
           ))}
 
-          {/* Police Station Markers - Blue */}
-          {(nearbyServices.police && nearbyServices.police.length > 0 ? nearbyServices.police : policeStations).map((station, idx) => (
+          {/* Police Station Markers - only real API data */}
+          {nearbyServices.police.map((station, idx) => (
             <Marker key={`police-${idx}`} position={[station.lat, station.lng]} icon={policeIcon}>
               <Popup>
-                <strong>Police Station: {station.name}</strong>
+                <strong>🚔 {station.name}</strong>
                 <br />
                 Distance: {station.distance}
                 <br />
@@ -869,16 +896,7 @@ function App() {
                 <br />
                 <button
                   onClick={() => alert(`Calling ${station.name}...`)}
-                  style={{
-                    marginTop: "5px",
-                    padding: "5px 10px",
-                    backgroundColor: "#ffc0cb",
-                    color: "#000000",
-                    border: "none",
-                    borderRadius: "3px",
-                    cursor: "pointer",
-                    fontWeight: "bold",
-                  }}
+                  style={{ marginTop: "5px", padding: "5px 10px", backgroundColor: "#ffc0cb", color: "#000000", border: "none", borderRadius: "3px", cursor: "pointer", fontWeight: "bold" }}
                 >
                   Call Now
                 </button>
@@ -891,24 +909,19 @@ function App() {
             (req, index) =>
               req.lat &&
               req.lng && (
-                <Marker
-                  key={`request-${index}`}
-                  position={[req.lat, req.lng]}
-                >
+                <Marker key={`request-${index}`} position={[req.lat, req.lng]}>
                   <Popup>
-                    <strong>Emergency: {req.name}</strong>
+                    <strong>🆘 Emergency: {req.name}</strong>
                     <br />
                     Type: {req.emergencyType}
                     <br />
-                    Priority: <span style={{ color: "#dc143c", fontWeight: "bold" }}>
-                      {req.priority}
-                    </span>
+                    Priority: <span style={{ color: "#dc143c", fontWeight: "bold" }}>{req.priority}</span>
                   </Popup>
                 </Marker>
               )
           )}
 
-          {/* Responder Vehicle Markers - Moving */}
+          {/* Responder Vehicle Markers */}
           {responders.map((responder, idx) => (
             <Marker
               key={`responder-${idx}`}
@@ -921,16 +934,35 @@ function App() {
               })}
             >
               <Popup>
-                <strong>Responder: {responder.service_name}</strong>
+                <strong>🚑 {responder.service_name}</strong>
                 <br />
                 Type: {responder.service_type}
                 <br />
-                Status: <span style={{ color: "#dc143c", fontWeight: "bold" }}>
-                  {responder.status}
-                </span>
+                Status: <span style={{ color: "#dc143c", fontWeight: "bold" }}>{responder.status}</span>
               </Popup>
             </Marker>
           ))}
+
+          {/* ETA Marker - shown at emergency location after submission */}
+          {eta !== null && lastSubmissionTime && etaMarkerLocation && (
+            <Marker
+              position={[etaMarkerLocation.lat, etaMarkerLocation.lng]}
+              icon={L.divIcon({
+                className: "",
+                html: `<div style="background:#ffc0cb;color:#000;border:3px solid #dc143c;border-radius:10px;padding:6px 10px;font-weight:bold;font-size:13px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.3);">
+                  🚨 ${reportedService} arriving in<br/>
+                  <span style="font-size:20px;color:#dc143c;">${Math.max(0, eta - Math.floor((new Date() - lastSubmissionTime) / 60000))} mins</span>
+                </div>`,
+                iconAnchor: [60, 0],
+              })}
+            >
+              <Popup>
+                <strong>🚨 Emergency submitted here</strong>
+                <br />
+                {reportedService} ETA: {Math.max(0, eta - Math.floor((new Date() - lastSubmissionTime) / 60000))} minutes
+              </Popup>
+            </Marker>
+          )}
         </MapContainer>
       </div>
       {/* DASHBOARD */}
@@ -1022,8 +1054,13 @@ function App() {
 
         <div style={{ marginBottom: "20px" }}>
           <h3 style={{ color: currentTheme.text }}>Hospitals</h3>
+          {nearbyServices.hospitals.length === 0 ? (
+            <p style={{ color: currentTheme.text, fontSize: "0.95em" }}>
+              {userLocation || customLocation ? "Loading nearby hospitals..." : "Enable GPS or search a location to see nearby hospitals."}
+            </p>
+          ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "15px" }}>
-            {hospitalData.map((hospital, idx) => (
+            {nearbyServices.hospitals.map((hospital, idx) => (
               <div
                 key={idx}
                 style={{
@@ -1057,12 +1094,18 @@ function App() {
               </div>
             ))}
           </div>
+          )}
         </div>
 
         <div style={{ marginBottom: "20px" }}>
           <h3 style={{ color: currentTheme.text }}>Fire Stations</h3>
+          {nearbyServices.fire.length === 0 ? (
+            <p style={{ color: currentTheme.text, fontSize: "0.95em" }}>
+              {userLocation || customLocation ? "Loading nearby fire stations..." : "Enable GPS or search a location to see nearby fire stations."}
+            </p>
+          ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "15px" }}>
-            {fireStations.map((station, idx) => (
+            {nearbyServices.fire.map((station, idx) => (
               <div
                 key={idx}
                 style={{
@@ -1096,12 +1139,18 @@ function App() {
               </div>
             ))}
           </div>
+          )}
         </div>
 
         <div>
           <h3 style={{ color: currentTheme.text }}>Police Stations</h3>
+          {nearbyServices.police.length === 0 ? (
+            <p style={{ color: currentTheme.text, fontSize: "0.95em" }}>
+              {userLocation || customLocation ? "Loading nearby police stations..." : "Enable GPS or search a location to see nearby police stations."}
+            </p>
+          ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "15px" }}>
-            {policeStations.map((station, idx) => (
+            {nearbyServices.police.map((station, idx) => (
               <div
                 key={idx}
                 style={{
@@ -1135,6 +1184,7 @@ function App() {
               </div>
             ))}
           </div>
+          )}
         </div>
       </div>
 
