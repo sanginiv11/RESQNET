@@ -1,4 +1,4 @@
-# 🚨 RESQNET — AI-Assisted Emergency Response System
+# RESQNET — AI-Assisted Emergency Response System
 
 > A real-time emergency response web application that lets users report emergencies, view nearby services on a live map, and receive AI-prioritized dispatch with ETA tracking.
 
